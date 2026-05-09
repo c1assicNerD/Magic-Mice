@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'gyroscope_service.dart';
+import 'sensor_service.dart';
 import 'socket_service.dart';
 
 class ControllerScreen extends StatefulWidget {
-  final GyroscopeService gyroService;
+  final SensorService sensorService;
   final SocketService socketService;
 
   const ControllerScreen({
     super.key,
-    required this.gyroService,
+    required this.sensorService,
     required this.socketService,
   });
 
@@ -18,16 +18,17 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen> {
   bool _isTracking = false;
+  MovementMode _selectedMode = MovementMode.combined;
 
   @override
   void initState() {
     super.initState();
-    widget.gyroService.start(); // start listening to gyroscope
+    widget.sensorService.start();
   }
 
   @override
   void dispose() {
-    widget.gyroService.stop();
+    widget.sensorService.stop();
     super.dispose();
   }
 
@@ -41,11 +42,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
       appBar: AppBar(
         title: const Text('Gyro Mouse'),
         actions: [
-          // Disconnect button
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
-              widget.gyroService.stop();
+              widget.sensorService.stop();
               widget.socketService.disconnect();
             },
           )
@@ -54,21 +54,73 @@ class _ControllerScreenState extends State<ControllerScreen> {
       body: Column(
         children: [
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
-          // Connection status
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.circle, color: Colors.green, size: 12),
-              const SizedBox(width: 6),
-              const Text('Connected to PC'),
-            ],
+          // ── Mode selector ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Mode: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                SegmentedButton<MovementMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: MovementMode.gyroscope,
+                      label: Text('Tilt'),
+                      icon: Icon(Icons.screen_rotation),
+                    ),
+                    ButtonSegment(
+                      value: MovementMode.combined,
+                      label: Text('Both'),
+                      icon: Icon(Icons.merge),
+                    ),
+                    ButtonSegment(
+                      value: MovementMode.linear,
+                      label: Text('Move'),
+                      icon: Icon(Icons.open_with),
+                    ),
+                  ],
+                  selected: {_selectedMode},
+                  onSelectionChanged: (value) {
+                    setState(() {
+                      _selectedMode = value.first;
+                      widget.sensorService.updateMode(_selectedMode);
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height:8),
 
-          // Sensitivity slider
+          // ── Blend slider (only visible in combined mode) ──
+          if (_selectedMode == MovementMode.combined)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  const Text('Tilt', style: TextStyle(fontSize: 12)),
+                  Expanded(
+                    child: Slider(
+                      min: 0.0,
+                      max: 1.0,
+                      value: widget.sensorService.blendWeight,
+                      onChanged: (val) {
+                        setState(() {
+                          widget.sensorService.updateBlend(val);
+                        });
+                      },
+                    ),
+                  ),
+                  const Text('Move', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+
+          // ── Sensitivity slider ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
@@ -78,38 +130,36 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   child: Slider(
                     min: 1.0,
                     max: 20.0,
-                    value: widget.gyroService.sensitivity,
+                    value: widget.sensorService.sensitivity,
                     onChanged: (val) {
                       setState(() {
-                        widget.gyroService.updateSensitivity(val);
+                        widget.sensorService.updateSensitivity(val);
                       });
                     },
                   ),
                 ),
-                Text(widget.gyroService.sensitivity.toStringAsFixed(1)),
+                Text(widget.sensorService.sensitivity.toStringAsFixed(1)),
               ],
             ),
           ),
 
-          const SizedBox(height: 8),
-
-          // Trackpad area — hold to move
-          Expanded( 
+          // ── Trackpad hold area ──
+          Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Listener(
                 onPointerDown: (_) {
-    widget.gyroService.setActive(true);
-    setState(() => _isTracking = true);
-  },
-  onPointerUp: (_) {
-    widget.gyroService.setActive(false);
-    setState(() => _isTracking = false);
-  },
-  onPointerCancel: (_) {
-    widget.gyroService.setActive(false);
-    setState(() => _isTracking = false);
-  },
+                  widget.sensorService.setActive(true);
+                  setState(() => _isTracking = true);
+                },
+                onPointerUp: (_) {
+                  widget.sensorService.setActive(false);
+                  setState(() => _isTracking = false);
+                },
+                onPointerCancel: (_) {
+                  widget.sensorService.setActive(false);
+                  setState(() => _isTracking = false);
+                },
                 child: Container(
                   decoration: BoxDecoration(
                     color: _isTracking
@@ -122,9 +172,24 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     ),
                   ),
                   child: Center(
-                    child: Text(
-                      _isTracking ? '🖱️ Moving...' : 'Hold to Move',
-                      style: const TextStyle(fontSize: 22),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _isTracking ? '🖱️ Moving...' : 'Hold to Move',
+                          style: const TextStyle(fontSize: 22),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _selectedMode == MovementMode.gyroscope
+                              ? 'Tilt to move cursor'
+                              : _selectedMode == MovementMode.linear
+                                  ? 'Move phone to move cursor'
+                                  : 'Tilt + Move combined',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -132,12 +197,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ),
           ),
 
-          // Click buttons row
+          // ── Click buttons ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                // Left click
                 Expanded(
                   child: GestureDetector(
                     onTap: () => _sendAction('left_click'),
@@ -148,18 +212,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Center(
-                        child: Text(
-                          'Left Click',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
+                        child: Text('Left Click',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 16)),
                       ),
                     ),
                   ),
                 ),
-
                 const SizedBox(width: 12),
-
-                // Right click
                 Expanded(
                   child: GestureDetector(
                     onTap: () => _sendAction('right_click'),
@@ -170,10 +230,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Center(
-                        child: Text(
-                          'Right Click',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
+                        child: Text('Right Click',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 16)),
                       ),
                     ),
                   ),
@@ -184,16 +243,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
           const SizedBox(height: 12),
 
-          // Scroll buttons row
+          // ── Scroll buttons ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                // Scroll up
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => widget.socketService
-                        .sendAction('scroll_up', amount: 3),
+                    onTap: () =>
+                        widget.socketService.sendAction('scroll_up', amount: 3),
                     child: Container(
                       height: 50,
                       decoration: BoxDecoration(
@@ -204,10 +262,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(width: 12),
-
-                // Scroll down
                 Expanded(
                   child: GestureDetector(
                     onTap: () => widget.socketService

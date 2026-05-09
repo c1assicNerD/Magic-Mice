@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'socket_service.dart';
-import 'gyroscope_service.dart';
+import 'sensor_service.dart';
 import 'connection_screen.dart';
 import 'controller_screen.dart';
 
@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
-      title: 'Gyro Mouse',
+      title: 'Magic Mice',
       debugShowCheckedModeBanner: false,
       home: RootScreen(),
     );
@@ -28,7 +28,7 @@ class RootScreen extends StatefulWidget {
 
 class _RootScreenState extends State<RootScreen> {
   late SocketService _socketService;
-  late GyroscopeService _gyroService;
+  late SensorService _sensorService;
   bool _isConnected = false;
 
   @override
@@ -41,12 +41,12 @@ class _RootScreenState extends State<RootScreen> {
         if (status == ConnectionStatus.disconnected ||
             status == ConnectionStatus.error) {
           setState(() => _isConnected = false);
-          _gyroService.stop();
+          _sensorService.stop();
         }
       },
     );
 
-    _gyroService = GyroscopeService(
+    _sensorService = SensorService(
       onMove: (dx, dy) {
         // Send movement to PC
         _socketService.sendMove(dx, dy);
@@ -56,7 +56,7 @@ class _RootScreenState extends State<RootScreen> {
 
   @override
   void dispose() {
-    _gyroService.stop();
+    _sensorService.stop();
     _socketService.disconnect();
     super.dispose();
   }
@@ -71,7 +71,7 @@ class _RootScreenState extends State<RootScreen> {
     }
 
     return ControllerScreen(
-      gyroService: _gyroService,
+      sensorService: _sensorService,
       socketService: _socketService,
     );
   }
